@@ -14,7 +14,7 @@ public class Server {
     private boolean pingServiceRunning = false;
     static HashMap<InetAddress, Boolean> clientList = new HashMap<>();
     private ClientListManager clm = null;
-    private boolean serverRunning = false;
+    private static boolean serverRunning = false;
 
     Server(String serverName, int port){
         this.port = port;
@@ -76,6 +76,7 @@ public class Server {
                 if(!clientList.containsKey(responseAddr)){
                     clientList.put(responseAddr, true);
                     clm.processClientHeartbeat(responseAddr.toString());
+                    if(!serverRunning) start();
                 }
                 responsePacket.setAddress(responsePacket.getAddress());
                 responsePacket.setPort(responsePacket.getPort());
@@ -96,14 +97,11 @@ public class Server {
         stopAd();
         stopPRS();
         if(clm != null) clm.stopHeartbeatScheduler();
+        stopAudioTransmission();
     }
 
-    public void stopAudioTransmission(){
+    public static void stopAudioTransmission(){
         serverRunning = false;
-    }
-
-    public static void pause(){
-        
     }
 
     public void start() {

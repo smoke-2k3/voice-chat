@@ -47,6 +47,9 @@ public class ClientListManager {
         } catch (UnknownHostException e) {
             e.printStackTrace();
         }
+        if (Server.clientList.isEmpty()) {
+            Server.stopAudioTransmission();
+        }
     }
 
     // Example method to stop the heartbeat scheduler when it's no longer needed
