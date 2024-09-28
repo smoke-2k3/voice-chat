@@ -5,6 +5,7 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 
 public class Receiver {
+    static DatagramSocket socket;
     public static void main(String[] args) {
         try {
             // Audio format settings
@@ -15,7 +16,7 @@ public class Receiver {
             speakers.start();
             
             // UDP socket setup
-            DatagramSocket socket = new DatagramSocket(50005);
+            socket = new DatagramSocket(50005);
             byte[] buffer = new byte[1024];
             DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
             
@@ -29,6 +30,8 @@ public class Receiver {
             }
         } catch (Exception e) {
             e.printStackTrace();
+        } finally {
+            socket.close();
         }
     }
 }
