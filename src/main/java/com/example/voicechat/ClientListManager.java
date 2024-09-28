@@ -48,6 +48,7 @@ public class ClientListManager {
             e.printStackTrace();
         }
         if (Server.clientList.isEmpty()) {
+            System.out.println("No client Connected. Stopping Audio Transmission");
             Server.stopAudioTransmission();
         }
     }
