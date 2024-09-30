@@ -53,7 +53,6 @@ public class ClientListManager {
         }
     }
 
-    // Example method to stop the heartbeat scheduler when it's no longer needed
     public void stopHeartbeatScheduler() {
         heartbeatScheduler.shutdown();
     }

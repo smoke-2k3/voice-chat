@@ -1,24 +1,32 @@
 package com.example.voicechat;
 
 import javax.sound.sampled.*;
+
+import java.io.IOException;
+import java.io.ObjectOutputStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.HashMap;
 
 public class Server {
+    private static int commPort;
     private int port;
     private String serverName;
     private boolean adRunning = false;
     private boolean pingServiceRunning = false;
     static HashMap<InetAddress, Boolean> clientList = new HashMap<>();
     private ClientListManager clm = null;
-    private static boolean serverRunning = false;
+    private static boolean transmissionRunning = false;
+    private int audioChunkSize;
 
-    Server(String serverName, int port){
+    Server(String serverName, int port,int commPort,int audioChunkSize){
         this.port = port;
+        Server.commPort = commPort;
         this.serverName = serverName;
+        this.audioChunkSize = audioChunkSize;
         clm = new ClientListManager();
     }
 
@@ -26,6 +34,21 @@ public class Server {
         startAd(adPort);
         pingReplyService(pingReplyPort);
         startTransmission();
+    }
+
+    public static void sendPeerListToClent() throws IOException{
+        for (InetAddress key : clientList.keySet()) {
+            sendMapToDevice(key, commPort);
+        }
+    }
+
+    private static void sendMapToDevice(InetAddress address, int port) throws IOException {
+        Socket socket = new Socket(address, port);
+        ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
+        oos.writeObject(clientList);  // Send the serialized HashMap
+        oos.flush();           // Ensure everything is sent
+        oos.close();           // Close the stream
+        socket.close();        // Close the socket
     }
 
     public void startAd(final int adPort){
@@ -87,7 +110,7 @@ public class Server {
                         if(!clientList.containsKey(responseAddr)){
                             clientList.put(responseAddr, true);
                             clm.processClientHeartbeat(responseAddr.toString());
-                            if(!serverRunning) startTransmission();
+                            if(!transmissionRunning) startTransmission();
                         }
                         responsePacket.setAddress(responsePacket.getAddress());
                         responsePacket.setPort(responsePacket.getPort());
@@ -115,7 +138,7 @@ public class Server {
     }
 
     public static void stopAudioTransmission(){
-        serverRunning = false;
+        transmissionRunning = false;
     }
 
     public void startTransmission() {
@@ -139,13 +162,13 @@ public class Server {
                     socket = new DatagramSocket();
                     InetAddress receiverAddress = InetAddress.getByName("localhost"); // replace with IP of receiver if necessary
                     
-                    byte[] buffer = new byte[1024];
+                    byte[] buffer = new byte[audioChunkSize];
                     System.out.println("Starting voice capture...");
                     int bytesRead = 0;
                     DatagramPacket packet = new DatagramPacket(buffer, bytesRead, receiverAddress, port);
-                    serverRunning = true;
+                    transmissionRunning = true;
                     System.out.println("Started Transmission");
-                    while (serverRunning) {
+                    while (transmissionRunning) {
                         bytesRead = microphone.read(buffer, 0, buffer.length);
                         // Send audio data over UDP
                         packet.setData(buffer, 0, bytesRead);
