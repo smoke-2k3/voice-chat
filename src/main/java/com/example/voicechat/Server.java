@@ -13,17 +13,19 @@ import java.util.HashMap;
 
 public class Server {
     private static int commPort;
-    private int port;
+    private int audioRecvPort;
     private String serverName;
     private boolean adRunning = false;
+    private boolean audioReceiving = false;
     private boolean pingServiceRunning = false;
+    private static boolean transmissionRunning = false;
     static HashMap<InetAddress, Boolean> clientList = new HashMap<>();
     private ClientListManager clm = null;
-    private static boolean transmissionRunning = false;
+    
     private int audioChunkSize;
 
-    Server(String serverName, int port,int commPort,int audioChunkSize){
-        this.port = port;
+    Server(String serverName, int audioRecvPort,int commPort,int audioChunkSize){
+        this.audioRecvPort = audioRecvPort;
         Server.commPort = commPort;
         this.serverName = serverName;
         this.audioChunkSize = audioChunkSize;
@@ -34,9 +36,10 @@ public class Server {
         startAd(adPort);
         pingReplyService(pingReplyPort);
         startTransmission();
+        receiveAudio();
     }
 
-    public static void sendPeerListToClent() throws IOException{
+    public static void sendPeerListToClient() throws IOException{
         for (InetAddress key : clientList.keySet()) {
             sendMapToDevice(key, commPort);
         }
@@ -68,7 +71,7 @@ public class Server {
                     }
                 }
                 try {
-                    adSocket = new DatagramSocket(adPort);
+                    adSocket = new DatagramSocket();
                     adSocket.setBroadcast(true);
                     adRunning = true;
                     System.out.println("Broadcast started");
@@ -106,13 +109,13 @@ public class Server {
                     System.out.println("Ping reply Service started");
                     while(pingServiceRunning){
                         pingSocket.receive(pingRecvPacket);
-                        responseAddr = responsePacket.getAddress();
+                        responseAddr = pingRecvPacket.getAddress();
                         if(!clientList.containsKey(responseAddr)){
                             clientList.put(responseAddr, true);
                             clm.processClientHeartbeat(responseAddr.toString());
                             if(!transmissionRunning) startTransmission();
                         }
-                        responsePacket.setAddress(responsePacket.getAddress());
+                        responsePacket.setAddress(responseAddr);
                         responsePacket.setPort(responsePacket.getPort());
                         pingSocket.send(responsePacket);
                     }
@@ -135,6 +138,7 @@ public class Server {
         stopPRS();
         if(clm != null) clm.stopHeartbeatScheduler();
         stopAudioTransmission();
+        audioReceiving = false;
     }
 
     public static void stopAudioTransmission(){
@@ -165,7 +169,7 @@ public class Server {
                     byte[] buffer = new byte[audioChunkSize];
                     System.out.println("Starting voice capture...");
                     int bytesRead = 0;
-                    DatagramPacket packet = new DatagramPacket(buffer, bytesRead, receiverAddress, port);
+                    DatagramPacket packet = new DatagramPacket(buffer, bytesRead, receiverAddress, audioRecvPort);
                     transmissionRunning = true;
                     System.out.println("Started Transmission");
                     while (transmissionRunning) {
@@ -190,5 +194,45 @@ public class Server {
             }
         });
         transmissionThread.start();
+    }
+
+    public void receiveAudio() {
+        Thread reception = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                DatagramSocket socket = null;
+                SourceDataLine speakers = null;
+                try {
+                    // Audio format settings
+                    AudioFormat format = new AudioFormat(44100, 16, 1, true, true);
+                    DataLine.Info info = new DataLine.Info(SourceDataLine.class, format);
+                    speakers = (SourceDataLine) AudioSystem.getLine(info);
+                    speakers.open(format);
+                    speakers.start();
+
+                    // UDP socket setup
+                    socket = new DatagramSocket(audioRecvPort);
+                    //socket.setSoTimeout(5000);
+                    byte[] buffer = new byte[audioChunkSize];
+                    DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+
+                    System.out.println("Waiting for voice data...");
+                    audioReceiving = true;
+                    while (audioReceiving) {
+                        socket.receive(packet);
+                        speakers.write(packet.getData(), 0, packet.getLength());
+                    }
+                } catch (Exception e) {
+                    //System.out.println("Server Disconnected");
+                    e.printStackTrace();
+                } finally {
+                    if (socket != null && !socket.isClosed())
+                        socket.close();
+                    if (speakers != null && speakers.isOpen())
+                        speakers.close();
+                }
+            }
+        });
+        reception.start();
     }
 }

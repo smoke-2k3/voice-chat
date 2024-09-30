@@ -10,69 +10,118 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.HashMap;
+import java.util.NoSuchElementException;
+import java.util.Scanner;
+import java.util.Vector;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class Receiver {
     
     private int commPort;
     private int audioRecvPort;
     private int audioChunkSize;
-    private boolean pingServiceRunning = false;
-    private boolean audioReceiving = false;
-    private boolean serverDiscoveryRunning = false;
-    private boolean transmissionRunning = false;
+    private int serverPingPort;
+    private int serverbroadcastPort;
     private boolean commRunning = false;
-    private HashMap<InetAddress,Boolean> activeServers = new HashMap<>();
+    private boolean audioReceiving = false;
+    private boolean pingServiceRunning = false;
+    private boolean transmissionRunning = false;
+    private boolean serverDiscoveryRunning = false;
+    Vector<InetAddress> indexMap = new Vector<>();
     private HashMap<InetAddress, Boolean> peerList = new HashMap<>();
+    private ConcurrentHashMap<InetAddress, Boolean> activeServers = new ConcurrentHashMap<>();
 
-    public Receiver(int audioRecvPort, int commPort,int audioChunkSize){
+    public Receiver(int audioRecvPort, int commPort,int audioChunkSize,int serverPingPort,int serverbroadcastPort){
         this.audioRecvPort = audioRecvPort;
         this.commPort = commPort;
+        this.serverPingPort = serverPingPort;
         this.audioChunkSize = audioChunkSize;
+        this.serverbroadcastPort = serverbroadcastPort;
     }
 
-    public void startserverDiscovery(int broadcastPort){
-        Thread discovery = new Thread(new Runnable() {
-            @Override
-            public void run(){
-                DatagramSocket disSocket = null;
-                try {
-                    disSocket = new DatagramSocket(broadcastPort);
-                    disSocket.setBroadcast(true);
-                    byte[] buffer = new byte[128];
-                    DatagramPacket recvPacket = new DatagramPacket(buffer, buffer.length);
-                    serverDiscoveryRunning = true;
-                    InetAddress recvAddr = null;
-                    while (serverDiscoveryRunning) {
-                        disSocket.receive(recvPacket);
-                        recvAddr = recvPacket.getAddress();
-                        if (!activeServers.containsKey(recvAddr)) {
-                            activeServers.put(recvAddr, true);
-                            //process heartbeat for inactives
-                        }
+    public void startServerDiscovery() {
+        Thread discovery = new Thread(() -> {
+            try (DatagramSocket disSocket = new DatagramSocket(serverbroadcastPort)) {
+                disSocket.setBroadcast(true);
+                byte[] buffer = new byte[128];
+                DatagramPacket recvPacket = new DatagramPacket(buffer, buffer.length);
+                serverDiscoveryRunning = true;
+
+                while (serverDiscoveryRunning) {
+                    disSocket.receive(recvPacket); // Receive heartbeat packet
+                    InetAddress recvAddr = recvPacket.getAddress();
+
+                    // Add new servers only
+                    if (activeServers.putIfAbsent(recvAddr, true) == null) {
+                        // Only show updated servers if new server is discovered
                         showActiveServers();
                     }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                } finally {
-                    if (disSocket != null && !disSocket.isClosed()) {
-                        disSocket.close();
-                    }
                 }
+                disSocket.close();
+                System.out.println("DisSocket closed");
+            } catch (IOException e) {
+                e.printStackTrace();
             }
         });
         discovery.start();
     }
 
-    public void showActiveServers(){
-        clearConsole();
+    public void showActiveServers() {
+        clearConsole(); // Clears the console
+        indexMap.clear(); // Reset index map for display
         int i = 0;
+
+        // Efficient iteration and display of active servers
         for (InetAddress key : activeServers.keySet()) {
-            System.out.println(i+')'+key.toString());
+            System.out.println(i + ") " + key.toString().substring(1));
+            indexMap.add(key); // Track the InetAddress for user selection
             i++;
         }
+        promptServerSelection(); // Prompt user to select a server
     }
 
-    public void startpingService(InetAddress serverAddr, int serverPingPort){
+    private void promptServerSelection() {
+        Thread thread = new Thread(() -> {
+        try {
+            System.out.println("\nChoose a Server: ");
+            Scanner scanner = new Scanner(System.in);
+            // Check if an integer is available before attempting to read
+            while (!scanner.hasNextInt()) {
+                System.out.println("Please enter a valid server index: ");
+                scanner.next(); // Discard invalid input
+            }
+            int choise = -1;
+            while(choise < 0 || choise < indexMap.size()) {
+                int choice = scanner.nextInt();
+                if (choice >= 0 && choice < indexMap.size()) {
+                    InetAddress selectedServer = indexMap.get(choice);
+                    System.out.println("You selected: " + selectedServer);
+                    // Proceed with selected server (e.g., connect to it)
+                    serverDiscoveryRunning = false;
+                    receivePeerList();
+                    startpingService(selectedServer);
+                    receiveAudio();
+                    startTransmission();
+                    break;
+                } else {
+                    System.out.println("Invalid choice. Please try again.");
+                }
+            }
+        } catch (NoSuchElementException e) {
+            System.out.println("No input found or stream is closed.");
+            e.printStackTrace();
+            stopReceiver();
+        } catch (Exception e) {
+            e.printStackTrace();
+            stopReceiver();
+        }
+    });
+    thread.start();
+}
+
+    
+
+    public void startpingService(InetAddress serverAddr){
         Thread pinger = new Thread(new Runnable() {
             @Override
             public void run(){
@@ -99,7 +148,6 @@ public class Receiver {
 
     public void stopPinger(){pingServiceRunning = false;}
 
-    
     private void clearConsole() {
         try {
             String os = System.getProperty("os.name").toLowerCase();
@@ -129,6 +177,7 @@ public class Receiver {
                 Socket socket = null;
                 try {
                     peerData = new ServerSocket(commPort);
+                    commRunning = true;
                     while (commRunning) {
                         socket = peerData.accept();
                         ois = new ObjectInputStream(socket.getInputStream());
@@ -194,6 +243,7 @@ public class Receiver {
                     }
                 } catch (Exception e) {
                     System.out.println("Server Disconnected");
+                    stopReceiver();
                     e.printStackTrace();
                 } finally {
                     if (socket != null && !socket.isClosed()) socket.close();
@@ -249,6 +299,14 @@ public class Receiver {
             }
         });
         transmissionThread.start();
+    }
+
+    public void stopReceiver(){
+        transmissionRunning = false;
+        pingServiceRunning = false;
+        commRunning = false;
+        transmissionRunning = false;
+        startServerDiscovery();
     }
 }
 

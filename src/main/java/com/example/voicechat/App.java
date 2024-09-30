@@ -20,23 +20,24 @@ public class App
         Scanner scanner = new Scanner(System.in);
         int choice = 0;
         while(!(choice == 2 || choice == 1 || choice == 3)){
-            System.out.print("1. Create room\n2. Connect to a server\n3. Quit\nEnter your choise: ");
+            System.out.print("1. Create room\n2. Join room\n3. Quit\nEnter your choise: ");
             choice = scanner.nextInt();
-            if(choice != 1 || choice != 2 || choice != 3) System.out.println("Invalid choice\n");
+            if(choice != 1 || choice != 2 || choice != 3) System.out.println("\nInvalid choice\n");
         }
-        scanner.close();
         if (choice == 1) {
             System.out.println("Starting server...");
             Server server = new Server(SERVER_NAME,AUDIO_RECEPTION_PORT,COMM_PORT,AUDIO_CHUNK_SIZE);
             server.start(ADVERTISEMENT_PORT,PING_REPLY_PORT);
+            scanner.close();
         }
         else if(choice == 2){
             System.out.println("Available Servers:");
-            Receiver receiver = new Receiver(AUDIO_RECEPTION_PORT,COMM_PORT);
-            receiver.startserverDiscovery(ADVERTISEMENT_PORT);
+            Receiver receiver = new Receiver(AUDIO_RECEPTION_PORT,COMM_PORT,AUDIO_CHUNK_SIZE,PING_REPLY_PORT,ADVERTISEMENT_PORT);
+            receiver.startServerDiscovery();
         }
         else {
             System.out.println("Quitting");
+            scanner.close();
         }
     }
 }
