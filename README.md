@@ -28,5 +28,5 @@ A simple command line java application for voice chat over local network.
 - Build a GUI
 ## Feedback
 
-If you have any feedback, please reach out to us at shashwatjain.003@.com
+If you have any feedback, please reach out to me at shashwatjain.003@.com
 
