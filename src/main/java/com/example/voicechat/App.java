@@ -31,7 +31,6 @@ public class App
             scanner.close();
         }
         else if(choice == 2){
-            System.out.println("Available Servers:");
             Receiver receiver = new Receiver(AUDIO_RECEPTION_PORT,COMM_PORT,AUDIO_CHUNK_SIZE,PING_REPLY_PORT,ADVERTISEMENT_PORT);
             receiver.startServerDiscovery();
         }

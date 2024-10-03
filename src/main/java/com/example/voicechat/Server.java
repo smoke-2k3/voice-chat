@@ -9,7 +9,7 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
-import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class Server {
     private static int commPort;
@@ -19,7 +19,7 @@ public class Server {
     private boolean audioReceiving = false;
     private boolean pingServiceRunning = false;
     private static boolean transmissionRunning = false;
-    static HashMap<InetAddress, Boolean> clientList = new HashMap<>();
+    static ConcurrentHashMap<InetAddress, Integer> clientList = new ConcurrentHashMap<>();
     private ClientListManager clm = null;
     
     private int audioChunkSize;
@@ -100,7 +100,7 @@ public class Server {
                 DatagramSocket pingSocket = null;
                 try {
                     pingSocket = new DatagramSocket(pingReplyPort);
-                    byte[] buffer = new byte[64];
+                    byte[] buffer = new byte[4];
                     byte[] responseData = "Y".getBytes();
                     DatagramPacket pingRecvPacket = new DatagramPacket(buffer, buffer.length);
                     DatagramPacket responsePacket = new DatagramPacket(responseData,responseData.length);
@@ -111,12 +111,14 @@ public class Server {
                         pingSocket.receive(pingRecvPacket);
                         responseAddr = pingRecvPacket.getAddress();
                         if(!clientList.containsKey(responseAddr)){
-                            clientList.put(responseAddr, true);
-                            clm.processClientHeartbeat(responseAddr.toString());
+                            System.out.println(responseAddr.toString() + ':' + bytesToInt(buffer) + " Connected");
+                            clientList.put(responseAddr, bytesToInt(buffer));
+                            sendPeerListToClient();
                             if(!transmissionRunning) startTransmission();
                         }
+                        clm.processClientHeartbeat(responseAddr.toString().substring(1));
                         responsePacket.setAddress(responseAddr);
-                        responsePacket.setPort(responsePacket.getPort());
+                        responsePacket.setPort(pingRecvPacket.getPort());
                         pingSocket.send(responsePacket);
                     }
                 } catch (Exception e) {
@@ -143,6 +145,10 @@ public class Server {
 
     public static void stopAudioTransmission(){
         transmissionRunning = false;
+    }
+
+    private static int bytesToInt(byte[] bytes) {
+        return (bytes[0] << 24) | (bytes[1] & 0xFF) << 16 | (bytes[2] & 0xFF) << 8 | (bytes[3] & 0xFF);
     }
 
     public void startTransmission() {
@@ -177,6 +183,7 @@ public class Server {
                         // Send audio data over UDP
                         packet.setData(buffer, 0, bytesRead);
                         for (InetAddress key : clientList.keySet()) {
+                            packet.setPort(clientList.get(key));
                             packet.setAddress(key);
                             socket.send(packet);
                         }
